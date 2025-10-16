@@ -140,4 +140,107 @@ router.post('/', async (req, res) => {
   }
 });
 
+// POST /chat/stream - Server-Sent Events streaming reply
+router.post('/stream', async (req, res) => {
+  const { sessionId, username, member, message, imageData, imageMimeType } = req.body;
+  console.log('Chat (stream) request received:', { sessionId, username, member, message: message?.substring(0, 100), hasImageData: !!imageData });
+  try {
+    // Initialize Cosmos DB models
+    const chatSessionModel = new CosmosChatSession();
+    const agentModel = new CosmosAgent();
+
+    // Get or create session
+    let session = await chatSessionModel.findBySessionId(sessionId);
+    if (!session) {
+      session = await chatSessionModel.create({ sessionId, username, member, messages: [] });
+    }
+
+    // Get system prompt
+    const agent = await agentModel.findByName(member);
+    const systemPrompt = agent ? agent.system_prompt : '';
+
+    // Prepare messages
+    const messages = [];
+    if (systemPrompt) {
+      messages.push({ role: 'system', content: systemPrompt });
+    }
+    session.messages.forEach(msg => {
+      messages.push({ role: msg.role, content: msg.content });
+    });
+    if (imageData) {
+      messages.push({ 
+        role: 'user', 
+        content: [
+          { type: 'text', text: message || 'Here is the image' },
+          { type: 'image_url', image_url: { url: `data:${imageMimeType || 'image/jpeg'};base64,${imageData}` } }
+        ]
+      });
+    } else {
+      messages.push({ role: 'user', content: message });
+    }
+
+    // SSE headers (and disable proxy buffering)
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.flushHeaders?.();
+
+    // Send helper
+    const send = (data) => {
+      res.write(`data: ${JSON.stringify(data)}\n\n`);
+    };
+
+    // Kick off stream so clients attach listeners
+    res.write(': ok\n\n');
+
+    // Stream from Azure OpenAI
+    const stream = await openai.chat.completions.create({
+      model: process.env.AZURE_OPENAI_DEPLOYMENT_NAME,
+      messages,
+      temperature: 0.7,
+      stream: true,
+    });
+
+    // Save the user message to session immediately
+    if (imageData) {
+      session.messages.push({ 
+        role: 'user', 
+        content: message || 'Sent an image',
+        imageData,
+        imageMimeType: imageMimeType || 'image/jpeg',
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      session.messages.push({ role: 'user', content: message, timestamp: new Date().toISOString() });
+    }
+
+    let fullText = '';
+    for await (const part of stream) {
+      const delta = part?.choices?.[0]?.delta?.content || '';
+      if (delta) {
+        fullText += delta;
+        send({ delta });
+      }
+    }
+
+    // End of stream
+    send({ done: true });
+
+    // Persist assistant message
+    session.messages.push({ role: 'assistant', content: fullText, timestamp: new Date().toISOString() });
+    await chatSessionModel.save(session);
+
+    res.end();
+  } catch (err) {
+    console.error('Streaming chat error:', err);
+    try {
+      res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
+      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+    } catch (_) {}
+    res.end();
+  }
+});
+
 module.exports = router;

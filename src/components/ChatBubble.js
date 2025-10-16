@@ -42,6 +42,16 @@ const ChatBubble = ({ message }) => {
           : 'bg-gray-100/90 backdrop-blur-sm text-gray-800 border border-azure/30'
       }`}>
         <div className="text-xl font-normal leading-relaxed">
+          {/* Optional inline thumbnail if present (for user image messages) */}
+          {message.imageData && message.imageMimeType && (
+            <div className="mb-3">
+              <img
+                src={`data:${message.imageMimeType};base64,${message.imageData}`}
+                alt={message.imageFilename || 'image'}
+                className="w-16 h-16 object-cover rounded-md border border-white/30"
+              />
+            </div>
+          )}
           <ReactMarkdown
             children={message.content}
             remarkPlugins={[remarkMath]}

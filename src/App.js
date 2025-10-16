@@ -19,6 +19,35 @@ function App() {
   const [dragCounter, setDragCounter] = useState(0);
   const [imagePreview, setImagePreview] = useState(null);
   const chatEndRef = useRef(null);
+  const assistantIndexRef = useRef(null);
+  const typingBufferRef = useRef('');
+  const typingTimerRef = useRef(null);
+
+  const startTypingDrain = () => {
+    if (typingTimerRef.current) return;
+    typingTimerRef.current = setInterval(() => {
+      const buffer = typingBufferRef.current;
+      if (!buffer || buffer.length === 0) {
+        clearInterval(typingTimerRef.current);
+        typingTimerRef.current = null;
+        return;
+      }
+      // Drain a small chunk for smoother visual updates
+      const chunkSize = Math.min(6, buffer.length);
+      const chunk = buffer.slice(0, chunkSize);
+      typingBufferRef.current = buffer.slice(chunkSize);
+      setMessages(prev => {
+        const next = [...prev];
+        const idx = assistantIndexRef.current ?? (next.length - 1);
+        next[idx] = {
+          ...next[idx],
+          content: (next[idx]?.content || '') + chunk,
+          timestamp: next[idx]?.timestamp || new Date()
+        };
+        return next;
+      });
+    }, 33); // ~30fps
+  };
 
   useEffect(() => {
     // Create a new session on load
@@ -54,14 +83,17 @@ function App() {
   const sendMessage = async () => {
     if (!input.trim() && !imagePreview) return;
     
-    // Create user message with text and/or image
-    let userContent = input;
-    if (imagePreview) {
-      userContent = input ? `${input}\n\n![image](data:${imagePreview.mimeType};base64,${imagePreview.base64})` 
-                          : `![image](data:${imagePreview.mimeType};base64,${imagePreview.base64})`;
-    }
+    // Create user message content; don't embed markdown image (we show a thumbnail separately)
+    const userContent = input;
     
-    const userMsg = { role: 'user', content: userContent, timestamp: new Date() };
+    const userMsg = { 
+      role: 'user', 
+      content: userContent, 
+      timestamp: new Date(),
+      imageData: imagePreview ? imagePreview.base64 : null,
+      imageMimeType: imagePreview ? imagePreview.mimeType : null,
+      imageFilename: imagePreview ? imagePreview.filename : null,
+    };
     setMessages(prev => [...prev, userMsg]);
     setLoading(true);
     setInput('');
@@ -70,22 +102,102 @@ function App() {
     try {
       // Use production API URL if available
       const apiUrl = process.env.REACT_APP_API_URL || '';
-      const res = await axios.post(`${apiUrl}/chat`, {
-        sessionId,
-        username: USERNAME,
-        member: MEMBER,
-        message: input,
-        imageData: imagePreview ? imagePreview.base64 : null,
-        imageMimeType: imagePreview ? imagePreview.mimeType : null,
+
+      // Do not create an assistant placeholder yet; wait until first delta arrives
+      // Reset streaming refs for a fresh message
+      assistantIndexRef.current = null;
+      typingBufferRef.current = '';
+      if (typingTimerRef.current) {
+        clearInterval(typingTimerRef.current);
+        typingTimerRef.current = null;
+      }
+
+      const response = await fetch(`${apiUrl}/chat/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId,
+          username: USERNAME,
+          member: MEMBER,
+          message: input,
+          imageData: imagePreview ? imagePreview.base64 : null,
+          imageMimeType: imagePreview ? imagePreview.mimeType : null,
+        })
       });
-      const assistantMsg = {
-        role: 'assistant',
-        content: res.data.reply,
-        timestamp: new Date(),
-      };
-      setMessages(prev => [...prev, assistantMsg]);
+
+      if (!response.ok || !response.body) {
+        throw new Error(`Stream failed: ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        // Parse SSE lines
+        const parts = buffer.split('\n\n');
+        buffer = parts.pop() || '';
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith('data:')) continue;
+          const json = line.slice(5).trim();
+          if (!json) continue;
+          try {
+            const evt = JSON.parse(json);
+            if (evt.delta) {
+              // Create assistant bubble lazily on first delta (guard against races)
+              if (assistantIndexRef.current === null) {
+                // Mark creation in progress to avoid duplicates from rapid chunks
+                assistantIndexRef.current = -1;
+                setMessages(prev => {
+                  const idx = prev.length;
+                  assistantIndexRef.current = idx;
+                  return [...prev, { role: 'assistant', content: '', timestamp: new Date() }];
+                });
+              }
+              typingBufferRef.current += evt.delta;
+              startTypingDrain();
+            }
+          } catch {}
+        }
+      }
+
+      // Flush any remaining buffered text after stream ends
+      if (typingBufferRef.current && typingBufferRef.current.length > 0) {
+        const remaining = typingBufferRef.current;
+        typingBufferRef.current = '';
+        setMessages(prev => {
+          const next = [...prev];
+          const idx = assistantIndexRef.current ?? (next.length - 1);
+          next[idx] = {
+            ...next[idx],
+            content: (next[idx]?.content || '') + remaining,
+            timestamp: next[idx]?.timestamp || new Date()
+          };
+          return next;
+        });
+      }
+
     } catch (err) {
-      setMessages(prev => [...prev, { role: 'assistant', content: 'Error: ' + err.message }]);
+      // Fallback to non-streaming request
+      try {
+        const apiUrl = process.env.REACT_APP_API_URL || '';
+        const res = await axios.post(`${apiUrl}/chat`, {
+          sessionId,
+          username: USERNAME,
+          member: MEMBER,
+          message: input,
+          imageData: imagePreview ? imagePreview.base64 : null,
+          imageMimeType: imagePreview ? imagePreview.mimeType : null,
+        });
+        setMessages(prev => [...prev, { role: 'assistant', content: res.data.reply, timestamp: new Date() }]);
+      } catch (fallbackErr) {
+        setMessages(prev => [...prev, { role: 'assistant', content: 'Error: ' + fallbackErr.message }]);
+      }
     }
     setLoading(false);
   };
@@ -175,7 +287,7 @@ function App() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-white text-azure relative">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-200 text-azure relative">
       {/* Global Drag Overlay */}
       {isDragOver && (
         <div className="fixed inset-0 bg-azure/20 backdrop-blur-sm z-50 flex items-center justify-center">
@@ -242,31 +354,6 @@ function App() {
 
       {/* Input Container */}
       <div className="w-full max-w-5xl mx-auto">
-        {/* Image Preview */}
-        {imagePreview && (
-          <div className="mb-4 relative">
-            <div className="bg-gray-200/80 backdrop-blur-sm border-2 border-azure/50 rounded-2xl p-4">
-              <div className="flex items-start gap-4">
-                <img
-                  src={`data:${imagePreview.mimeType};base64,${imagePreview.base64}`}
-                  alt="Preview"
-                  className="w-20 h-20 object-cover rounded-lg border border-azure/30"
-                />
-                <div className="flex-1">
-                  <p className="text-azure text-sm font-medium">{imagePreview.filename}</p>
-                  <p className="text-azure/80 text-xs">Image ready to send</p>
-                </div>
-                <button
-                  onClick={() => setImagePreview(null)}
-                  className="text-azure/80 hover:text-azure transition-colors"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-        
         <div className="flex gap-3 mb-4">
           <input
             type="text"
@@ -278,6 +365,22 @@ function App() {
             disabled={loading}
             className="flex-1 px-6 py-4 bg-gray-200/80 backdrop-blur-sm border-2 border-azure/50 rounded-2xl text-gray-800 placeholder-azure/60 focus:outline-none focus:border-azure focus:bg-gray-200 text-lg font-light transition-all duration-300"
           />
+          {imagePreview && (
+            <div className="flex items-center gap-3 bg-gray-200/80 border-2 border-azure/50 rounded-2xl p-2">
+              <img
+                src={`data:${imagePreview.mimeType};base64,${imagePreview.base64}`}
+                alt="Preview"
+                className="w-12 h-12 object-cover rounded-lg border border-azure/30"
+              />
+              <button
+                onClick={() => setImagePreview(null)}
+                className="text-azure/80 hover:text-azure transition-colors px-2"
+                aria-label="Remove image"
+              >
+                ✕
+              </button>
+            </div>
+          )}
           <button 
             onClick={sendMessage} 
             disabled={loading || (!input.trim() && !imagePreview)}
