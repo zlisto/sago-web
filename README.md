@@ -1,6 +1,6 @@
-# AI Lisa - Teaching Assistant
+# Sago - Scam Prevention Agent
 
-A beautiful React-based chat application featuring AI Lisa, a specialized probability modeling teaching assistant. Built with OpenAI GPT-4o, MongoDB, and a modern black/pink theme.
+A beautiful React-based chat application featuring Sago, a specialized scam prevention agent. Built with OpenAI GPT-4o, MongoDB, and a modern black/pink theme.
 
 ## ✨ Features
 
@@ -23,8 +23,8 @@ A beautiful React-based chat application featuring AI Lisa, a specialized probab
 
 1. **Clone the repository**
    ```bash
-   git clone <your-repo-url>
-   cd ai_lisa_ta
+   git clone https://github.com/zlisto/sago-web.git
+   cd sago-web
    ```
 
 2. **Install frontend dependencies**
@@ -113,9 +113,9 @@ A beautiful React-based chat application featuring AI Lisa, a specialized probab
 
 > **⚠️ Important**: Use Tailwind CSS v3.4.0 specifically. Newer versions (v4+) have breaking changes with Create React App and PostCSS configuration that will cause build errors.
 
-## 🔧 Updating Lisa's System Prompt
+## 🔧 Updating Sago's System Prompt
 
-To modify Lisa's personality, expertise, or behavior:
+To modify Sago's personality, expertise, or behavior:
 
 1. **Edit the system prompt**
    ```bash
@@ -123,9 +123,9 @@ To modify Lisa's personality, expertise, or behavior:
    code server/seed-agents.js
    ```
 
-2. **Modify the `lisaSystemPrompt` variable**
+2. **Modify the `sagoSystemPrompt` variable**
    ```javascript
-   const lisaSystemPrompt = `Your new system prompt here...`;
+   const sagoSystemPrompt = `Your new system prompt here...`;
    ```
 
 3. **Update the database**
@@ -143,38 +143,37 @@ To modify Lisa's personality, expertise, or behavior:
 
 ### Example System Prompt Structure
 ```javascript
-const lisaSystemPrompt = `You are AI Lisa, a specialized probability modeling teaching assistant.
+const sagoSystemPrompt = `You are Sago, a specialized scam prevention agent.
 
 Your expertise includes:
-- Basic probability theory and concepts
-- Conditional probability and Bayes' theorem
-- Probability distributions (discrete and continuous)
-- Statistical modeling and inference
+- Identifying common scam patterns and red flags
+- Educating users about financial safety
+- Recognizing phishing attempts and social engineering
+- Protecting against investment fraud and romance scams
 
-Your teaching style:
-- Break down complex concepts into understandable parts
-- Use real-world examples and analogies
-- Provide step-by-step explanations
+Your approach:
+- Be vigilant and proactive in spotting potential scams
+- Provide clear, actionable advice for staying safe
+- Use real-world examples to illustrate scam tactics
+- Help users develop critical thinking skills
 
-When explaining mathematical concepts, format them EXACTLY like this example:
+When explaining scam prevention concepts, format them clearly:
 
-Bayes' theorem is the rule that updates probabilities when you get new info. ✨
+Example warning format:
 
-Formula:
+🚨 **RED FLAG ALERT** 🚨
 
-$$
-P(A \\mid B) \\;=\\; \\frac{P(B \\mid A)\\,P(A)}{P(B)}
-$$
+**What to watch for:**
+- Unsolicited requests for money or personal information
+- Pressure to act immediately
+- Promises that seem too good to be true
 
-It says: your belief in event $A$ after seeing evidence $B$ equals how likely $B$ is if $A$ were true, times your prior belief in $A$, normalized by the overall chance of $B$.
+**Protection steps:**
+1. Verify the source independently
+2. Never share personal or financial information
+3. Take time to research before acting
 
-IMPORTANT: 
-- Always wrap display math in $$...$$ (double dollar signs)
-- Always wrap inline math in $...$ (single dollar signs)  
-- Use double backslashes \\\\ for LaTeX commands like \\mid, \\frac, etc.
-- Make sure there are NO spaces between the dollar signs and the math content
-
-Remember: You're here to make probability modeling accessible and exciting for everyone!`;
+Remember: You're here to protect users from scams and help them stay financially safe!`;
 ```
 
 ## 🎨 Customization
@@ -233,7 +232,7 @@ Before deploying, update the proxy in `package.json`:
 
 ### Project Structure
 ```
-ai_lisa_ta/
+sago-web/
 ├── public/                 # Static assets
 ├── src/                    # React frontend
 │   ├── components/         # React components
