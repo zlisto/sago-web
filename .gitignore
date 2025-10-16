@@ -271,3 +271,6 @@ pnpm-lock.yaml
 .env.development
 .env.staging
 .env.production
+
+# Server prompt file
+server/prompt.txt
