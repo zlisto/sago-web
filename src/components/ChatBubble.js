@@ -43,12 +43,12 @@ const ChatBubble = ({ message }) => {
       }`}>
         <div className="text-xl font-normal leading-relaxed">
           {/* Optional inline thumbnail if present (for user image messages) */}
-          {message.imageData && message.imageMimeType && (
+          {message.imageData && (
             <div className="mb-3">
               <img
-                src={`data:${message.imageMimeType};base64,${message.imageData}`}
+                src={`data:${(message.imageMimeType || 'image/png')};base64,${message.imageData}`}
                 alt={message.imageFilename || 'image'}
-                className="w-16 h-16 object-cover rounded-md border border-white/30"
+                className="w-16 h-16 object-contain rounded-md border border-white/30 bg-white"
               />
             </div>
           )}
