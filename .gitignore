@@ -237,6 +237,15 @@ ENV/
 env.bak/
 venv.bak/
 
+# Python files (exclude from frontend deployment)
+*.py
+requirements.txt
+vector_store_manager.py
+download_conversations.py
+example_download_usage.py
+example_usage.py
+test_mongodb_connection.py
+
 # Database files
 *.db
 *.sqlite
